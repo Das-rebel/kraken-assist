@@ -1,0 +1,47 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - img [ref=e5]
+      - heading "Eigent" [level=1] [ref=e8]
+    - button "Settings" [ref=e9] [cursor=pointer]:
+      - img [ref=e10]
+  - generic [ref=e13]:
+    - heading "Select Agents" [level=2] [ref=e14]
+    - generic [ref=e15]:
+      - generic [ref=e17] [cursor=pointer]:
+        - generic [ref=e18]: 💻
+        - generic [ref=e19]:
+          - heading "Developer" [level=3] [ref=e20]
+          - paragraph [ref=e21]: Code execution & scripting
+      - generic [ref=e23] [cursor=pointer]:
+        - generic [ref=e24]: 🔍
+        - generic [ref=e25]:
+          - heading "Search" [level=3] [ref=e26]
+          - paragraph [ref=e27]: Web research & extraction
+      - generic [ref=e29] [cursor=pointer]:
+        - generic [ref=e30]: 📄
+        - generic [ref=e31]:
+          - heading "Document" [level=3] [ref=e32]
+          - paragraph [ref=e33]: Create & manage files
+      - generic [ref=e35] [cursor=pointer]:
+        - generic [ref=e36]: 🎨
+        - generic [ref=e37]:
+          - heading "Multi-Modal" [level=3] [ref=e38]
+          - paragraph [ref=e39]: Images & analysis
+  - generic [ref=e40]:
+    - heading "Your Task" [level=2] [ref=e41]
+    - textbox "Describe your task... The agents will work together to complete it." [ref=e42]
+    - generic [ref=e43]:
+      - generic [ref=e44] [cursor=pointer]:
+        - checkbox "Human-in-the-loop" [checked] [ref=e45]
+        - generic [ref=e46]: Human-in-the-loop
+      - generic [ref=e47] [cursor=pointer]:
+        - checkbox "Parallel execution" [checked] [ref=e48]
+        - generic [ref=e49]: Parallel execution
+  - button "Execute Task →" [ref=e50] [cursor=pointer]:
+    - generic [ref=e51]: Execute Task
+    - generic [ref=e52]: →
+```

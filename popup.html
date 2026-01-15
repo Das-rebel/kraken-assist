@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kraken Assist - Multi-Agent AI</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
+          <path d="M16 8v16M8 16h16" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <h1>Kraken Assist</h1>
+      </div>
+      <button id="settingsBtn" class="icon-btn" title="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v6m0 6v6m9-9h-6m-6 0H3"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Agent Selection -->
+    <div class="agents-section">
+      <h2>Select Agents</h2>
+      <div class="agents-grid">
+        <label class="agent-card">
+          <input type="checkbox" id="agent-developer" checked>
+          <div class="agent-info">
+            <div class="agent-icon">💻</div>
+            <div class="agent-details">
+              <h3>Developer</h3>
+              <p>Code execution & scripting</p>
+            </div>
+          </div>
+        </label>
+
+        <label class="agent-card">
+          <input type="checkbox" id="agent-search" checked>
+          <div class="agent-info">
+            <div class="agent-icon">🔍</div>
+            <div class="agent-details">
+              <h3>Search</h3>
+              <p>Web research & extraction</p>
+            </div>
+          </div>
+        </label>
+
+        <label class="agent-card">
+          <input type="checkbox" id="agent-document" checked>
+          <div class="agent-info">
+            <div class="agent-icon">📄</div>
+            <div class="agent-details">
+              <h3>Document</h3>
+              <p>Create & manage files</p>
+            </div>
+          </div>
+        </label>
+
+        <label class="agent-card">
+          <input type="checkbox" id="agent-multimodal" checked>
+          <div class="agent-info">
+            <div class="agent-icon">🎨</div>
+            <div class="agent-details">
+              <h3>Multi-Modal</h3>
+              <p>Images & analysis</p>
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Task Input -->
+    <div class="task-section">
+      <h2>Your Task</h2>
+      <textarea
+        id="taskInput"
+        placeholder="Describe your task... The agents will work together to complete it."
+        rows="4"
+      ></textarea>
+
+      <div class="task-options">
+        <label class="checkbox-label">
+          <input type="checkbox" id="humanInLoop" checked>
+          <span>Human-in-the-loop</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="parallelMode" checked>
+          <span>Parallel execution</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Execute Button -->
+    <button id="executeBtn" class="execute-btn">
+      <span class="btn-text">Execute Task</span>
+      <span class="btn-icon">→</span>
+    </button>
+
+    <!-- Active Tasks -->
+    <div id="activeTasks" class="tasks-section hidden">
+      <h2>Active Tasks</h2>
+      <div id="taskList" class="task-list"></div>
+    </div>
+
+    <!-- Setup Prompt (shown if not configured) -->
+    <div id="setupPrompt" class="setup-prompt hidden">
+      <div class="setup-icon">⚙️</div>
+      <h3>Setup Required</h3>
+      <p>Please configure your API keys to start using Kraken Assist</p>
+      <button id="setupBtn" class="setup-btn">Open Settings</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
