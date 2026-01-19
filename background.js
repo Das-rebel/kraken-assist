@@ -53,28 +53,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * Execute a task using the multi-agent workforce
  */
 async function handleTaskExecution(task) {
+  const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  let orchestratorInstance = null;
+
   try {
     // Initialize orchestrator if not exists
     if (!orchestrator) {
       const config = await storageManager.getConfig();
       orchestrator = new AgentOrchestrator(config);
     }
+    orchestratorInstance = orchestrator;
 
-    // Generate unique task ID
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Execute task with appropriate agents
-    const result = await orchestrator.executeTask(task, {
-      taskId,
-      onProgress: (update) => {
-        // Send progress updates to popup
-        chrome.runtime.sendMessage({
-          action: 'taskProgress',
-          taskId,
-          update
-        });
-      }
+    // Execute task with appropriate agents and timeout
+    const taskTimeout = 90000; // 90 second total timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Task execution timeout')), taskTimeout);
     });
+
+    const result = await Promise.race([
+      orchestratorInstance.executeTask(task, {
+        taskId,
+        onProgress: (update) => {
+          // Send progress updates to popup with error handling
+          try {
+            chrome.runtime.sendMessage({
+              action: 'taskProgress',
+              taskId,
+              update
+            }).catch(err => {
+              // Popup might be closed, ignore error
+              console.debug('Failed to send progress update:', err.message);
+            });
+          } catch (err) {
+            console.debug('Error sending progress:', err.message);
+          }
+        }
+      }),
+      timeoutPromise
+    ]);
 
     // Store task result
     await storageManager.saveTaskResult(taskId, result);
@@ -86,8 +102,21 @@ async function handleTaskExecution(task) {
     };
   } catch (error) {
     console.error('Task execution error:', error);
+
+    // Send error progress update
+    try {
+      chrome.runtime.sendMessage({
+        action: 'taskProgress',
+        taskId,
+        update: { stage: 'error', message: error.message }
+      }).catch(() => {}); // Ignore errors
+    } catch (err) {
+      // Ignore
+    }
+
     return {
       success: false,
+      taskId,
       error: error.message
     };
   }

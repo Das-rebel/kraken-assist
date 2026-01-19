@@ -21,36 +21,80 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Execute a task using appropriate agents
+   * Execute a task using appropriate agents with timeout protection
    */
   async executeTask(task, callbacks = {}) {
     const { taskId, onProgress } = callbacks;
+    const timeout = 60000; // 60 second total timeout
+    const controller = new AbortController();
 
     try {
-      // Analyze task and determine which agents to use
-      const taskPlan = await this.planTaskExecution(task);
-      onProgress?.({ stage: 'planning', message: 'Task analysis complete' });
+      // Store task for cancellation
+      this.activeTasks.set(taskId, { controller, task, status: 'running' });
 
-      // Execute agents in parallel or sequence based on dependencies
-      const results = await this.runAgents(taskPlan, task, {
-        onProgress: (update) => {
-          onProgress?.({
-            stage: 'execution',
-            agent: update.agent,
-            message: update.message
-          });
-        }
+      // Create timeout wrapper
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          controller.abort();
+          reject(new Error(`Task execution timeout after ${timeout}ms`));
+        }, timeout);
       });
 
-      // Synthesize results
-      const finalResult = await this.synthesizeResults(results, task);
-      onProgress?.({ stage: 'complete', message: 'Task completed successfully' });
+      // Execute task with timeout protection
+      const result = await Promise.race([
+        this.executeTaskInternal(task, callbacks, controller.signal),
+        timeoutPromise
+      ]);
 
-      return finalResult;
+      this.activeTasks.set(taskId, { ...this.activeTasks.get(taskId), status: 'complete' });
+      return result;
     } catch (error) {
+      if (error.name === 'AbortError') {
+        onProgress?.({ stage: 'cancelled', message: 'Task was cancelled' });
+        throw new Error('Task cancelled by user or timeout');
+      }
       onProgress?.({ stage: 'error', message: error.message });
       throw error;
+    } finally {
+      this.activeTasks.delete(taskId);
     }
+  }
+
+  /**
+   * Internal task execution with signal support
+   */
+  async executeTaskInternal(task, callbacks, signal) {
+    const { onProgress } = callbacks;
+
+    if (signal?.aborted) {
+      throw new Error('Task aborted before execution');
+    }
+
+    // Analyze task and determine which agents to use
+    const taskPlan = await this.planTaskExecution(task);
+    onProgress?.({ stage: 'planning', message: 'Task analysis complete' });
+
+    if (signal?.aborted) throw new Error('Task aborted during planning');
+
+    // Execute agents in parallel or sequence based on dependencies
+    const results = await this.runAgents(taskPlan, task, {
+      onProgress: (update) => {
+        onProgress?.({
+          stage: 'execution',
+          agent: update.agent,
+          message: update.message
+        });
+      },
+      signal
+    });
+
+    if (signal?.aborted) throw new Error('Task aborted during execution');
+
+    // Synthesize results
+    const finalResult = await this.synthesizeResults(results, task);
+    onProgress?.({ stage: 'complete', message: 'Task completed successfully' });
+
+    return finalResult;
   }
 
   /**
@@ -99,35 +143,67 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Run agents based on plan
+   * Run agents based on plan with cancellation support
    */
   async runAgents(plan, task, callbacks) {
     const results = new Map();
+    const { signal } = callbacks;
 
     if (plan.executionMode === 'parallel') {
-      // Run agents in parallel
+      // Run agents in parallel with individual error handling
       const agentPromises = plan.agents.map(async (agentType) => {
+        if (signal?.aborted) {
+          throw new Error(`Agent ${agentType} aborted`);
+        }
+
         callbacks?.onProgress({
           agent: agentType,
           message: 'Starting work...'
         });
 
-        const agent = this.agents[agentType];
-        const result = await agent.execute(task);
-        results.set(agentType, result);
+        try {
+          const agent = this.agents[agentType];
 
-        callbacks?.onProgress({
-          agent: agentType,
-          message: 'Complete'
-        });
+          // Add timeout per agent (30 seconds)
+          const agentTimeout = 30000;
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(`Agent ${agentType} timeout`)), agentTimeout);
+          });
 
-        return { agentType, result };
+          const result = await Promise.race([
+            agent.execute(task),
+            timeoutPromise
+          ]);
+
+          results.set(agentType, result);
+
+          callbacks?.onProgress({
+            agent: agentType,
+            message: 'Complete'
+          });
+
+          return { agentType, result, success: true };
+        } catch (error) {
+          callbacks?.onProgress({
+            agent: agentType,
+            message: `Failed: ${error.message}`
+          });
+
+          // Store error but don't fail entire task
+          results.set(agentType, { error: error.message, success: false });
+          return { agentType, error: error.message, success: false };
+        }
       });
 
+      // Use allSettled to ensure all agents complete or fail
       await Promise.all(agentPromises);
     } else {
       // Run agents sequentially based on dependencies
       for (const agentType of plan.agents) {
+        if (signal?.aborted) {
+          throw new Error('Sequential execution aborted');
+        }
+
         callbacks?.onProgress({
           agent: agentType,
           message: 'Starting work...'
@@ -144,13 +220,34 @@ export class AgentOrchestrator {
           }
         };
 
-        const result = await agent.execute(enhancedTask);
-        results.set(agentType, result);
+        try {
+          // Add timeout per agent (30 seconds)
+          const agentTimeout = 30000;
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error(`Agent ${agentType} timeout`)), agentTimeout);
+          });
 
-        callbacks?.onProgress({
-          agent: agentType,
-          message: 'Complete'
-        });
+          const result = await Promise.race([
+            agent.execute(enhancedTask),
+            timeoutPromise
+          ]);
+
+          results.set(agentType, result);
+
+          callbacks?.onProgress({
+            agent: agentType,
+            message: 'Complete'
+          });
+        } catch (error) {
+          results.set(agentType, { error: error.message, success: false });
+          callbacks?.onProgress({
+            agent: agentType,
+            message: `Failed: ${error.message}`
+          });
+
+          // Continue with next agent even if this one failed
+          console.warn(`Agent ${agentType} failed, continuing with remaining agents:`, error.message);
+        }
       }
     }
 

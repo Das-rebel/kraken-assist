@@ -53,7 +53,7 @@ export class UnifiedAPIClient {
   }
 
   /**
-   * Execute a chat completion request
+   * Execute a chat completion request with timeout and retry limits
    */
   async chatCompletion(params) {
     const {
@@ -61,35 +61,91 @@ export class UnifiedAPIClient {
       provider = this.config.defaultProvider,
       model = this.providers[provider]?.defaultModel,
       maxTokens = this.config.maxTokens,
-      temperature = this.config.temperature
+      temperature = this.config.temperature,
+      timeout = 30000, // 30 second default timeout
+      maxRetries = 3 // Maximum retry attempts per provider
     } = params;
 
-    // Try primary provider
-    try {
-      return await this.callProvider(provider, { prompt, model, maxTokens, temperature });
-    } catch (error) {
-      console.error(`${provider} failed:`, error.message);
+    // Track attempted providers to prevent duplicates
+    const attemptedProviders = new Set();
 
-      // Try fallback providers in aggressive mode
-      if (this.config.mode === 'aggressive' && this.config.fallbackProviders?.length > 0) {
-        for (const fallbackProvider of this.config.fallbackProviders) {
-          try {
-            console.log(`Trying fallback provider: ${fallbackProvider}`);
-            return await this.callProvider(fallbackProvider, { prompt, model, maxTokens, temperature });
-          } catch (fallbackError) {
-            console.error(`${fallbackProvider} also failed:`, fallbackError.message);
+    // Try primary provider with retry limit
+    let retryCount = 0;
+    while (retryCount < maxRetries && !attemptedProviders.has(provider)) {
+      try {
+        const result = await this.callProviderWithTimeout(provider, { prompt, model, maxTokens, temperature }, timeout);
+        return result;
+      } catch (error) {
+        console.error(`${provider} failed (attempt ${retryCount + 1}/${maxRetries}):`, error.message);
+        retryCount++;
+
+        // If this is a timeout or rate limit, try again with same provider
+        if (error.message.includes('timeout') || error.message.includes('429')) {
+          if (retryCount < maxRetries) {
+            await this.sleep(1000 * retryCount); // Exponential backoff
+            continue;
           }
         }
-      }
 
-      throw new Error(`All providers failed. Last error: ${error.message}`);
+        // Mark as attempted and break to fallback
+        attemptedProviders.add(provider);
+        break;
+      }
+    }
+
+    // Try fallback providers in aggressive mode
+    if (this.config.mode === 'aggressive' && this.config.fallbackProviders?.length > 0) {
+      for (const fallbackProvider of this.config.fallbackProviders) {
+        // Skip if already tried or not configured
+        if (attemptedProviders.has(fallbackProvider) || !this.config[fallbackProvider + 'ApiKey']) {
+          continue;
+        }
+
+        try {
+          console.log(`Trying fallback provider: ${fallbackProvider}`);
+          const result = await this.callProviderWithTimeout(fallbackProvider, { prompt, model, maxTokens, temperature }, timeout);
+          return result;
+        } catch (fallbackError) {
+          console.error(`${fallbackProvider} failed:`, fallbackError.message);
+          attemptedProviders.add(fallbackProvider);
+        }
+      }
+    }
+
+    throw new Error(`All providers failed after ${attemptedProviders.size} attempts`);
+  }
+
+  /**
+   * Call provider with timeout protection
+   */
+  async callProviderWithTimeout(provider, params, timeout) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const result = await this.callProvider(provider, { ...params, signal: controller.signal });
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeout}ms`);
+      }
+      throw error;
     }
   }
 
   /**
-   * Call a specific provider
+   * Sleep utility for backoff
    */
-  async callProvider(provider, { prompt, model, maxTokens, temperature }) {
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Call a specific provider with cancellation support
+   */
+  async callProvider(provider, { prompt, model, maxTokens, temperature, signal }) {
     const providerConfig = this.providers[provider];
     if (!providerConfig) {
       throw new Error(`Unknown provider: ${provider}`);
@@ -123,7 +179,8 @@ export class UnifiedAPIClient {
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal // Pass AbortSignal to fetch
     });
 
     if (!response.ok) {
